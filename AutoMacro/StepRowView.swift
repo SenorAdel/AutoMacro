@@ -135,7 +135,7 @@ struct StepRowView: View {
                     }
 
                     // Position control (only for click steps)
-                    if step.type == .leftClick || step.type == .rightClick {
+                    if step.type.isClick {
                         HStack {
                             Label("Click position", systemImage: "cursorarrow")
                                 .font(.system(size: 12))
@@ -219,6 +219,7 @@ struct StepRowView: View {
         switch step.type {
         case .leftClick:  return Color(red: 0.35, green: 0.68, blue: 1.0)
         case .rightClick: return Color(red: 0.78, green: 0.45, blue: 1.0)
+        case .middleClick: return Color(red: 1.0, green: 0.45, blue: 0.6)
         case .keyPress:   return Color(red: 0.35, green: 0.90, blue: 0.65)
         case .delay:      return Color(red: 1.0, green: 0.72, blue: 0.3)
         }

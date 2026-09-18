@@ -16,6 +16,7 @@ struct ContentView: View {
     @EnvironmentObject var engine: MacroEngine
     @EnvironmentObject var hotkeyManager: GlobalHotkeyManager
     @EnvironmentObject var permissions: PermissionsManager
+    @EnvironmentObject var targetManager: TargetAppManager
 
     @State private var showAddStep     = false
     @State private var showSequences   = false
@@ -23,6 +24,7 @@ struct ContentView: View {
     @State private var isInfiniteLoop  = true
     @State private var showClearAlert  = false
     @State private var sequenceNameText = "Untitled Sequence"
+    @State private var draggingStepID: UUID?
 
     var body: some View {
         ZStack {
@@ -245,7 +247,7 @@ struct ContentView: View {
             } else {
                 ScrollView(.vertical, showsIndicators: false) {
                     LazyVStack(spacing: 6) {
-                        ForEach(Array(engine.steps.indices), id: \.self) { i in
+                        ForEach(Array(engine.steps.enumerated()), id: \.element.id) { i, step in
                             if i < engine.steps.count {
                                 StepRowView(
                                     step: $engine.steps[i],
@@ -260,11 +262,24 @@ struct ContentView: View {
                                     insertion: .scale(scale: 0.95).combined(with: .opacity),
                                     removal: .scale(scale: 0.95).combined(with: .opacity)
                                 ))
+                                // Drag a row to reorder it.
+                                .opacity(draggingStepID == step.id ? 0.4 : 1)
+                                .onDrag {
+                                    draggingStepID = step.id
+                                    return NSItemProvider(object: step.id.uuidString as NSString)
+                                }
+                                .onDrop(of: [.text], delegate: StepDropDelegate(
+                                    targetID: step.id, engine: engine, draggingID: $draggingStepID))
                             }
                         }
                     }
                     .padding(.horizontal, 12)
                     .padding(.vertical, 8)
+                }
+                // Dropping in the gaps between rows still ends the drag.
+                .onDrop(of: [.text], isTargeted: nil) { _ in
+                    draggingStepID = nil
+                    return true
                 }
             }
 
@@ -358,6 +373,8 @@ struct ContentView: View {
             Divider().opacity(0.15)
 
             VStack(spacing: 12) {
+                targetRow
+
                 // Loop controls
                 HStack(spacing: 12) {
                     Text("Loops:")
@@ -468,6 +485,58 @@ struct ContentView: View {
         .background(Color.white.opacity(0.04))
     }
 
+    // MARK: - Target App Row
+
+    /// Picks where events go: the whole system (original behavior) or one app.
+    private var targetRow: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: 8) {
+                Text("Target:")
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundColor(.secondary)
+
+                Menu {
+                    Button("Whole System") { targetManager.select(nil) }
+                    Divider()
+                    ForEach(targetManager.runningApps) { app in
+                        Button {
+                            targetManager.select(app)
+                        } label: {
+                            if let icon = app.icon {
+                                Label { Text(app.name) } icon: { Image(nsImage: icon) }
+                            } else {
+                                Text(app.name)
+                            }
+                        }
+                    }
+                } label: {
+                    HStack(spacing: 6) {
+                        if let icon = targetManager.target?.icon {
+                            Image(nsImage: icon)
+                        }
+                        Text(targetManager.target?.name ?? "Whole System")
+                            .font(.system(size: 13, weight: .medium))
+                    }
+                }
+                .menuStyle(.borderlessButton)
+                .fixedSize()
+
+                Spacer()
+            }
+            .disabled(engine.isRunning)
+
+            if let message = targetManager.statusMessage {
+                Text(message)
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundColor(.orange)
+            } else if targetManager.target != nil {
+                Text("Key presses go only to this app, even when it's in the background. Clicks work as usual.")
+                    .font(.system(size: 11))
+                    .foregroundColor(.secondary)
+            }
+        }
+    }
+
     // MARK: - Helpers
 
     private var statusColor: Color {
@@ -489,6 +558,34 @@ struct ContentView: View {
     private var loopSuffix: String {
         if case .count(let max) = engine.loopMode { return "/\(max)" }
         return "/∞"
+    }
+}
+
+// MARK: - Step Drag & Drop
+
+/// Live-reorders steps while a row is dragged over another row.
+struct StepDropDelegate: DropDelegate {
+    let targetID: UUID
+    let engine: MacroEngine
+    @Binding var draggingID: UUID?
+
+    func dropEntered(info: DropInfo) {
+        guard let draggingID, draggingID != targetID,
+              let from = engine.steps.firstIndex(where: { $0.id == draggingID }),
+              let to = engine.steps.firstIndex(where: { $0.id == targetID })
+        else { return }
+        withAnimation(.spring(response: 0.3)) {
+            engine.moveStep(from: IndexSet(integer: from), to: to > from ? to + 1 : to)
+        }
+    }
+
+    func dropUpdated(info: DropInfo) -> DropProposal? {
+        DropProposal(operation: .move)
+    }
+
+    func performDrop(info: DropInfo) -> Bool {
+        draggingID = nil
+        return true
     }
 }
 
@@ -582,6 +679,7 @@ struct AddStepSheet: View {
             HStack(spacing: 10) {
                 clickOption(title: "Left Click", icon: "cursorarrow.click", tag: "left")
                 clickOption(title: "Right Click", icon: "cursorarrow.click.2", tag: "right")
+                clickOption(title: "Middle Click", icon: "computermouse", tag: "middle")
             }
         }
     }
@@ -742,7 +840,12 @@ struct AddStepSheet: View {
 
         switch selectedCategory {
         case .mouseClick:
-            let type: StepType = selectedClick == "left" ? .leftClick : .rightClick
+            let type: StepType
+            switch selectedClick {
+            case "right":  type = .rightClick
+            case "middle": type = .middleClick
+            default:       type = .leftClick
+            }
             engine.addStep(MacroStep(type: type, delayMs: finalDelay))
         case .keyboard:
             guard let kc = KeyCodeHelper.keyCode(for: selectedKey) else { return }
