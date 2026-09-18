@@ -11,12 +11,13 @@ A native macOS macro automation app built with SwiftUI. Create, record, and repl
 
 ## Features
 
-- **Step-based Macro Builder** — Add mouse clicks (left/right) and keyboard presses as individual steps
+- **Step-based Macro Builder** — Add mouse clicks (left/right/middle) and keyboard presses as individual steps
+- **Target App Mode** — Pick a running app and key presses go only to it, even while it's in the background or fullscreen on another desktop
 - **Macro Recording** — Record your actual clicks and keypresses with real timing, then replay them
 - **Configurable Global Hotkeys** — Start/stop and record macros from any app using customizable keyboard shortcuts
 - **Precise Timing** — Set delay (in milliseconds) between each step, or use recorded real-time delays
 - **Loop Control** — Run macros infinitely or a specific number of times
-- **Step Reordering** — Move steps up/down with arrow buttons
+- **Step Reordering** — Drag steps to reorder them, or use the up/down arrow buttons
 - **Fixed/Dynamic Click Positions** — Click at the current cursor position or at fixed screen coordinates
 - **Modifier Key Support** — Combine keys with ⌃ Control, ⌥ Option, ⇧ Shift, ⌘ Command
 - **Sequence Persistence** — Save and load named macro sequences
