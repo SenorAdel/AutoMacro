@@ -46,6 +46,9 @@ final class MacroEngine: ObservableObject {
     /// Whether we're currently recording live input.
     @Published var isRecording: Bool = false
 
+    /// When it has a target app selected, key presses go only to that app.
+    weak var targetManager: TargetAppManager?
+
     // MARK: Private State
 
     private var executionTask: Task<Void, Never>?
@@ -158,14 +161,14 @@ final class MacroEngine: ObservableObject {
         lastRecordTime = Date()
 
         // Local monitor — captures events when our app is focused
-        recordLocalMonitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown, .keyDown]) { [weak self] event in
+        recordLocalMonitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown, .otherMouseDown, .keyDown]) { [weak self] event in
             self?.handleRecordedInput(event)
             return event  // Pass through so the event still works normally
         }
 
         // Global monitor — captures events when other apps are focused
         // Requires Accessibility permission
-        recordGlobalMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown, .keyDown]) { [weak self] event in
+        recordGlobalMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown, .otherMouseDown, .keyDown]) { [weak self] event in
             self?.handleRecordedInput(event)
         }
     }
@@ -198,6 +201,9 @@ final class MacroEngine: ObservableObject {
 
         case .rightMouseDown:
             step = MacroStep(type: .rightClick, delayMs: delayMs)
+
+        case .otherMouseDown where event.buttonNumber == 2:
+            step = MacroStep(type: .middleClick, delayMs: delayMs)
 
         case .keyDown:
             let keyCode = CGKeyCode(event.keyCode)
@@ -269,22 +275,29 @@ final class MacroEngine: ObservableObject {
     private func fireEvent(_ step: MacroStep) {
         switch step.type {
         case .leftClick:
-            let pos = clickPosition(for: step)
-            postMouseEvent(type: .leftMouseDown, button: .left, at: pos)
-            postMouseEvent(type: .leftMouseUp, button: .left, at: pos)
+            click(step, button: .left, down: .leftMouseDown, up: .leftMouseUp)
 
         case .rightClick:
-            let pos = clickPosition(for: step)
-            postMouseEvent(type: .rightMouseDown, button: .right, at: pos)
-            postMouseEvent(type: .rightMouseUp, button: .right, at: pos)
+            click(step, button: .right, down: .rightMouseDown, up: .rightMouseUp)
+
+        case .middleClick:
+            click(step, button: .center, down: .otherMouseDown, up: .otherMouseUp)
 
         case .keyPress(let keyCode, let modifiers, _):
-            postKeyEvent(keyCode: keyCode, modifiers: modifiers, down: true)
-            postKeyEvent(keyCode: keyCode, modifiers: modifiers, down: false)
+            let pid = targetManager?.target?.pid
+            postKeyEvent(keyCode: keyCode, modifiers: modifiers, down: true, pid: pid)
+            postKeyEvent(keyCode: keyCode, modifiers: modifiers, down: false, pid: pid)
 
         case .delay:
             break  // Pure delay step — timing is handled by delayMs above
         }
+    }
+
+    /// Fires a click at the step's position.
+    private func click(_ step: MacroStep, button: CGMouseButton, down: CGEventType, up: CGEventType) {
+        let pos = clickPosition(for: step)
+        postMouseEvent(type: down, button: button, at: pos)
+        postMouseEvent(type: up, button: button, at: pos)
     }
 
     /// Resolves the click position based on the step's position mode.
@@ -297,17 +310,22 @@ final class MacroEngine: ObservableObject {
         }
     }
 
-    /// Posts a mouse event (down or up) at the given screen coordinate.
+    /// Posts a system-wide mouse event (down or up) at the given screen coordinate.
     private func postMouseEvent(type: CGEventType, button: CGMouseButton, at point: CGPoint) {
         guard let event = CGEvent(mouseEventSource: nil, mouseType: type, mouseCursorPosition: point, mouseButton: button) else { return }
         event.post(tap: .cghidEventTap)
     }
 
-    /// Posts a keyboard event (key down or key up) with optional modifier flags.
-    private func postKeyEvent(keyCode: CGKeyCode, modifiers: CGEventFlags, down: Bool) {
+    /// Posts a keyboard event (key down or key up) with optional modifier flags —
+    /// system-wide, or only to `pid` in target-app mode.
+    private func postKeyEvent(keyCode: CGKeyCode, modifiers: CGEventFlags, down: Bool, pid: pid_t? = nil) {
         guard let event = CGEvent(keyboardEventSource: nil, virtualKey: keyCode, keyDown: down) else { return }
         event.flags = modifiers
-        event.post(tap: .cghidEventTap)
+        if let pid {
+            event.postToPid(pid)
+        } else {
+            event.post(tap: .cghidEventTap)
+        }
     }
 
     // MARK: - Key Display Name

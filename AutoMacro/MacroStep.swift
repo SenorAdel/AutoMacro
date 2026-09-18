@@ -16,6 +16,7 @@ import CoreGraphics
 enum StepType: Codable, Equatable {
     case leftClick
     case rightClick
+    case middleClick
     case keyPress(keyCode: CGKeyCode, modifiers: CGEventFlags, displayName: String)
     case delay  // Pure delay — no action, just waits
 
@@ -24,6 +25,7 @@ enum StepType: Codable, Equatable {
         switch self {
         case .leftClick:    return "Left Click"
         case .rightClick:   return "Right Click"
+        case .middleClick:  return "Middle Click"
         case .keyPress(_, _, let name): return "Key: \(name)"
         case .delay:        return "Delay"
         }
@@ -34,8 +36,17 @@ enum StepType: Codable, Equatable {
         switch self {
         case .leftClick:    return "cursorarrow.click"
         case .rightClick:   return "cursorarrow.click.2"
+        case .middleClick:  return "computermouse"
         case .keyPress:     return "keyboard"
         case .delay:        return "timer"
+        }
+    }
+
+    /// Whether this step is a mouse click (of any button).
+    var isClick: Bool {
+        switch self {
+        case .leftClick, .rightClick, .middleClick: return true
+        case .keyPress, .delay:                     return false
         }
     }
 
@@ -52,6 +63,8 @@ enum StepType: Codable, Equatable {
             try c.encode("leftClick", forKey: .type)
         case .rightClick:
             try c.encode("rightClick", forKey: .type)
+        case .middleClick:
+            try c.encode("middleClick", forKey: .type)
         case .keyPress(let kc, let mods, let name):
             try c.encode("keyPress", forKey: .type)
             try c.encode(kc, forKey: .keyCode)
@@ -68,6 +81,7 @@ enum StepType: Codable, Equatable {
         switch type {
         case "leftClick":  self = .leftClick
         case "rightClick": self = .rightClick
+        case "middleClick": self = .middleClick
         case "keyPress":
             let kc   = try c.decode(CGKeyCode.self, forKey: .keyCode)
             let mods = try c.decode(UInt64.self, forKey: .modifiers)

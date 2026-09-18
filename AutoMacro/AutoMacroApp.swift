@@ -13,6 +13,7 @@ struct AutoMacroApp: App {
     @StateObject private var engine = MacroEngine()
     @StateObject private var hotkeyManager = GlobalHotkeyManager()
     @StateObject private var permissions = PermissionsManager()
+    @StateObject private var targetManager = TargetAppManager()
 
     var body: some Scene {
         WindowGroup {
@@ -20,7 +21,9 @@ struct AutoMacroApp: App {
                 .environmentObject(engine)
                 .environmentObject(hotkeyManager)
                 .environmentObject(permissions)
+                .environmentObject(targetManager)
                 .onAppear {
+                    engine.targetManager = targetManager
                     // Wire global hotkey callbacks to engine actions
                     hotkeyManager.onToggle = { [weak engine] in
                         engine?.toggleExecution()
